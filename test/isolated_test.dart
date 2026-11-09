@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:responsive_mirror/responsive_mirror.dart';
@@ -190,6 +192,19 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('inc')).last);
     await tester.pumpAndSettle();
     expect(hub.relay.outOfSync, isEmpty);
+  });
+
+  testWidgets('the host can ask an instance for a PNG of its screen',
+      (tester) async {
+    final hub = await _pumpPair(tester);
+    final bytes = await tester.runAsync(() => hub.relay.capture('phone', 1));
+    expect(bytes, isNotNull);
+    // PNG signature, and the size of the phone (400 x 760 at ratio 1).
+    expect(bytes!.sublist(0, 4), [0x89, 0x50, 0x4E, 0x47]);
+    final data = ByteData.sublistView(bytes);
+    expect(data.getUint32(16), 400);
+    expect(data.getUint32(20), 760);
+    expect(await hub.relay.capture('nobody', 1), isNull);
   });
 
   testWidgets('input sync can be switched off at the relay', (tester) async {
