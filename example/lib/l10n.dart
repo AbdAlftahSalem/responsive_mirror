@@ -11,6 +11,11 @@ const _strings = <String, Map<String, String>>{
   'required': {'en': 'Required', 'ar': 'مطلوب'},
   'number': {'en': 'Enter a number', 'ar': 'أدخل رقماً'},
   'language': {'en': 'العربية', 'ar': 'English'},
+  'promo': {
+    'en': 'Free shipping on orders over \$50',
+    'ar': 'شحن مجاني للطلبات فوق 50\$',
+  },
+  'free': {'en': 'FREE', 'ar': 'مجاناً'},
   'description': {
     'en': 'Handmade in small batches. Every piece is a little different, '
         'which is what makes it yours.',
