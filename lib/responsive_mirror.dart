@@ -7,6 +7,7 @@ export 'src/device.dart';
 export 'src/slot.dart';
 export 'src/sync/navigation_sync.dart'
     show MirrorNavigationSync, MirrorNavigatorObserver;
+export 'src/variant.dart';
 export 'src/sync/scroll_sync.dart'
     show MirrorScrollSync, ScrollMatcher, ScrollSignature;
 export 'src/widgets/device_frame.dart';
