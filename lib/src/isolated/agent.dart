@@ -1,5 +1,9 @@
+import 'dart:convert';
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../slot.dart';
 import '../sync/scroll_sync.dart';
@@ -46,6 +50,8 @@ class ResponsiveMirrorAgent extends StatefulWidget {
 
 class _ResponsiveMirrorAgentState extends State<ResponsiveMirrorAgent> {
   final GlobalKey _rootKey = GlobalKey(debugLabel: 'responsive_mirror agent');
+  final GlobalKey _captureKey =
+      GlobalKey(debugLabel: 'responsive_mirror agent capture');
   bool _replaying = false;
   Offset? _downPosition;
   Duration? _downTime;
@@ -188,7 +194,27 @@ class _ResponsiveMirrorAgentState extends State<ResponsiveMirrorAgent> {
 
   // -------------------------------------------------------------- replaying
 
+  Future<void> _capture(MirrorMessage message) async {
+    final id = message['id'];
+    String? data;
+    try {
+      final boundary = _captureKey.currentContext?.findRenderObject();
+      if (boundary is RenderRepaintBoundary) {
+        final ratio = (message['ratio'] as num?)?.toDouble() ?? 1;
+        final image = await boundary.toImage(pixelRatio: ratio);
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        image.dispose();
+        if (bytes != null) data = base64Encode(bytes.buffer.asUint8List());
+      }
+    } catch (_) {}
+    _send({'type': 'png', 'id': id, 'data': data});
+  }
+
   void _onMessage(MirrorMessage message) {
+    if (message['type'] == 'capture' && mounted) {
+      _capture(message);
+      return;
+    }
     if (message['type'] != 'replay' || !mounted) return;
     final event = message['event'];
     if (event is! Map) return;
@@ -245,6 +271,7 @@ class _ResponsiveMirrorAgentState extends State<ResponsiveMirrorAgent> {
   Widget build(BuildContext context) {
     final slot = widget.slot;
     Widget app = KeyedSubtree(key: _rootKey, child: widget.child);
+    app = RepaintBoundary(key: _captureKey, child: app);
     app = NotificationListener<ScrollNotification>(
       onNotification: _onScroll,
       child: app,

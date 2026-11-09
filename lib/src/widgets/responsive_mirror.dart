@@ -328,20 +328,11 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
 
   Future<List<MirrorExport>> _export({required bool perDevice}) async {
     final exports = <MirrorExport>[];
-    Future<Uint8List?> capture(GlobalKey key, double pixelRatio) async {
-      final boundary = key.currentContext?.findRenderObject();
-      if (boundary is! RenderRepaintBoundary) return null;
-      final image = await boundary.toImage(pixelRatio: pixelRatio);
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      return data?.buffer.asUint8List();
-    }
-
     if (perDevice) {
       for (final entry in _boundaryKeys.entries) {
         final device = _deviceOf(entry.key);
-        final bytes = await capture(entry.value,
-            (device?.devicePixelRatio ?? 1).clamp(1, 3).toDouble());
+        final bytes = await _capturePng(
+            entry.key, (device?.devicePixelRatio ?? 1).clamp(1, 3).toDouble());
         if (bytes == null) continue;
         exports.add(MirrorExport(
           fileName:
@@ -358,6 +349,33 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
       }
     }
     return exports;
+  }
+
+  /// PNG of one device. In isolated mode the device is another page (an
+  /// iframe), so its agent renders the PNG and sends it back.
+  Future<Uint8List?> _capturePng(String id, double pixelRatio) async {
+    final relay = _relay;
+    if (relay != null) return relay.capture(id, pixelRatio);
+    final boundary = _boundaryKeys[id]?.currentContext?.findRenderObject();
+    if (boundary is! RenderRepaintBoundary) return null;
+    final image = await boundary.toImage(pixelRatio: pixelRatio);
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    return data?.buffer.asUint8List();
+  }
+
+  Future<ui.Image?> _captureImage(String id, double pixelRatio) async {
+    if (_relay == null) {
+      final boundary = _boundaryKeys[id]?.currentContext?.findRenderObject();
+      if (boundary is! RenderRepaintBoundary) return null;
+      return boundary.toImage(pixelRatio: pixelRatio);
+    }
+    final bytes = await _capturePng(id, pixelRatio);
+    if (bytes == null) return null;
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    codec.dispose();
+    return frame.image;
   }
 
   /// Renders the whole matrix as one image, built from per-device captures
@@ -418,12 +436,11 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
         text('${device.name}   ${device.specLabel}', Offset(x, y + 6), 20,
             Colors.white70,
             weight: FontWeight.w500, maxWidth: math.max(w, 200));
-        final boundary = _boundaryKeys[id]?.currentContext?.findRenderObject();
         final rect = Rect.fromLTWH(x, y + label, w, h);
         final rrect = RRect.fromRectAndRadius(
             rect, Radius.circular(device.cornerRadius * s));
-        if (boundary is RenderRepaintBoundary) {
-          final image = await boundary.toImage(pixelRatio: s);
+        final image = await _captureImage(id, s);
+        if (image != null) {
           canvas.save();
           canvas.clipRRect(rrect);
           canvas.drawImageRect(
