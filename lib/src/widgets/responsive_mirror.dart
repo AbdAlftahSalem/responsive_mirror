@@ -270,15 +270,111 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
         ));
       }
     } else {
-      final scale = _controller.zoom ?? _lastFitScale;
-      final bytes =
-          await capture(_gridKey, (1.5 / scale).clamp(1.0, 4.0).toDouble());
+      final bytes = await _renderSheet();
       if (bytes != null) {
         exports.add(
             MirrorExport(fileName: 'responsive_mirror_grid.png', bytes: bytes));
       }
     }
     return exports;
+  }
+
+  /// Renders the whole matrix as one image, built from per-device captures
+  /// (so devices scrolled off screen are included and nothing is clipped).
+  Future<Uint8List?> _renderSheet() async {
+    final devices = _controller.visibleDevices;
+    if (devices.isEmpty) return null;
+    final variants = _controller.visibleVariants;
+    final rows = variants.isEmpty ? <MirrorVariant?>[null] : variants;
+    const s = 0.5, margin = 48.0, gap = 40.0, label = 44.0;
+    final header = variants.isEmpty ? 0.0 : 56.0;
+    final rowWidth = devices.fold<double>(0, (w, d) => w + d.size.width * s) +
+        gap * (devices.length - 1);
+    final rowHeight =
+        devices.map((d) => d.size.height * s).reduce(math.max) + label;
+    final width = (rowWidth + margin * 2).ceil();
+    final height = (margin * 2 +
+            rows.length * (header + rowHeight) +
+            (rows.length - 1) * gap)
+        .ceil();
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+        Paint()..color = widget.backgroundColor);
+
+    void text(String value, Offset at, double size, Color color,
+        {FontWeight weight = FontWeight.w600, double maxWidth = 2000}) {
+      final builder = ui.ParagraphBuilder(ui.ParagraphStyle(
+        fontSize: size,
+        fontWeight: weight,
+        maxLines: 1,
+        ellipsis: '…',
+      ))
+        ..pushStyle(ui.TextStyle(color: color))
+        ..addText(value);
+      final paragraph = builder.build()
+        ..layout(ui.ParagraphConstraints(width: maxWidth));
+      canvas.drawParagraph(paragraph, at);
+    }
+
+    var y = margin;
+    for (final variant in rows) {
+      if (variant != null) {
+        final dir = variant.resolvedTextDirection;
+        text(
+          '${variant.label}${dir == null ? '' : dir == TextDirection.rtl ? '   RTL' : '   LTR'}',
+          Offset(margin, y + 8),
+          26,
+          Colors.white,
+        );
+        y += header;
+      }
+      var x = margin;
+      for (final device in devices) {
+        final id = MirrorSlot.idFor(device, variant);
+        final w = device.size.width * s, h = device.size.height * s;
+        text('${device.name}   ${device.specLabel}', Offset(x, y + 6), 20,
+            Colors.white70,
+            weight: FontWeight.w500, maxWidth: math.max(w, 200));
+        final boundary = _boundaryKeys[id]?.currentContext?.findRenderObject();
+        final rect = Rect.fromLTWH(x, y + label, w, h);
+        final rrect = RRect.fromRectAndRadius(
+            rect, Radius.circular(device.cornerRadius * s));
+        if (boundary is RenderRepaintBoundary) {
+          final image = await boundary.toImage(pixelRatio: s);
+          canvas.save();
+          canvas.clipRRect(rrect);
+          canvas.drawImageRect(
+            image,
+            Rect.fromLTWH(
+                0, 0, image.width.toDouble(), image.height.toDouble()),
+            rect,
+            Paint()..filterQuality = FilterQuality.medium,
+          );
+          canvas.restore();
+          image.dispose();
+        }
+        final issues = _controller.issuesFor(id);
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = issues.isEmpty ? 2 : 4
+            ..color = issues.isEmpty
+                ? const Color(0xFF3A3A44)
+                : const Color(0xFFE5484D),
+        );
+        x += w + gap;
+      }
+      y += rowHeight + gap;
+    }
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(width, height);
+    picture.dispose();
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    return data?.buffer.asUint8List();
   }
 
   MirrorDevice? _deviceOf(String slotId) {
