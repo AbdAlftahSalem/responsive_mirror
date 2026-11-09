@@ -190,6 +190,10 @@ class ProductPage extends StatelessWidget {
         Text('\$${product.price.toStringAsFixed(2)}',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
+        // Deliberately NOT responsive: fine on tablets and desktops, overflows
+        // on phones. responsive_mirror (v0.3) flags it with a red badge.
+        const PromoStrip(),
+        const SizedBox(height: 16),
         Text(tr(context, 'description')),
         const SizedBox(height: 24),
         FilledButton.icon(
@@ -291,6 +295,32 @@ class _AddProductPageState extends State<AddProductPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A promo strip with a fixed-width message. It overflows on narrow screens on
+/// purpose, to show the overflow report of responsive_mirror.
+class PromoStrip extends StatelessWidget {
+  const PromoStrip({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.local_shipping_outlined),
+          const SizedBox(width: 8),
+          SizedBox(width: 300, child: Text(tr(context, 'promo'))),
+          const SizedBox(width: 8),
+          Chip(label: Text(tr(context, 'free'))),
+        ],
       ),
     );
   }
