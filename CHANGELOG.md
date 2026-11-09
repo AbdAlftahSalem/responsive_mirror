@@ -1,3 +1,14 @@
+## 0.4.1
+
+* Isolated mode: PNG export works. A frame is a separate page, so the host
+  asks every agent to capture its own screen (`RepaintBoundary.toImage`)
+  and send the PNG back over `postMessage`; per-device exports and the grid
+  sheet are built from those. `MirrorRelay.capture(slotId, pixelRatio)`.
+* Docs: limitations found while running a real production GetX app in the
+  mirror: one global navigator key (use isolated mode), shared web storage
+  between frames, tap targets across languages need a `ValueKey`, and
+  Chrome's WebGL context limit (keep isolated mode to about 6–8 devices).
+
 ## 0.4.0
 
 * Isolated mode (`mode: MirrorMode.isolated`, **Flutter web only**): every

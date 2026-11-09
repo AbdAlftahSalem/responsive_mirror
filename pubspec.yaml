@@ -3,7 +3,7 @@ description: >-
   Preview your Flutter app on phones, tablets, laptops and desktops side by
   side with navigation and scrolling in sync, RTL/LTR and dark/light variants,
   a per-device overflow report and PNG export. Windows, Linux, macOS and web.
-version: 0.4.0
+version: 0.4.1
 homepage: https://github.com/AbdAlftahSalem/responsive_mirror
 repository: https://github.com/AbdAlftahSalem/responsive_mirror
 issue_tracker: https://github.com/AbdAlftahSalem/responsive_mirror/issues
