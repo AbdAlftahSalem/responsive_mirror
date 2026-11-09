@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'device.dart';
+import 'issues.dart';
 import 'variant.dart';
 
 /// Holds the state of a `ResponsiveMirror`: which devices are shown, the zoom
@@ -149,6 +150,66 @@ class ResponsiveMirrorController extends ChangeNotifier {
     if (value == _syncScroll) return;
     _syncScroll = value;
     notifyListeners();
+  }
+
+  final List<MirrorIssue> _issues = [];
+  bool _showIssues = false;
+  Future<List<MirrorExport>> Function({required bool perDevice})? _exporter;
+
+  /// Overflows and errors caught on the devices, oldest first.
+  ///
+  /// Handy in tests / CI: pump your app inside a mirror and expect
+  /// `controller.issues` to be empty.
+  List<MirrorIssue> get issues => List.unmodifiable(_issues);
+
+  /// Issues of one slot.
+  List<MirrorIssue> issuesFor(String slotId) =>
+      _issues.where((i) => i.slotId == slotId).toList(growable: false);
+
+  /// Records an issue. The same message on the same slot is counted once
+  /// with [MirrorIssue.count] increased.
+  void reportIssue(MirrorIssue issue) {
+    final index = _issues.indexWhere(
+        (i) => i.slotId == issue.slotId && i.message == issue.message);
+    if (index >= 0) {
+      _issues[index] = _issues[index].repeated();
+    } else {
+      _issues.add(issue);
+    }
+    notifyListeners();
+  }
+
+  /// Forgets every issue.
+  void clearIssues() {
+    if (_issues.isEmpty) return;
+    _issues.clear();
+    notifyListeners();
+  }
+
+  /// Whether the issues panel is open.
+  bool get showIssues => _showIssues;
+  set showIssues(bool value) {
+    if (value == _showIssues) return;
+    _showIssues = value;
+    notifyListeners();
+  }
+
+  /// Renders the grid (or every device separately when [perDevice] is true)
+  /// to PNG. Requires a mounted `ResponsiveMirror` using this controller.
+  Future<List<MirrorExport>> exportPng({bool perDevice = false}) {
+    final exporter = _exporter;
+    if (exporter == null) {
+      throw StateError('No ResponsiveMirror is attached to this controller.');
+    }
+    return exporter(perDevice: perDevice);
+  }
+
+  /// Used by `ResponsiveMirror` to plug in its exporter.
+  @internal
+  void attachExporter(
+      Future<List<MirrorExport>> Function({required bool perDevice})?
+          exporter) {
+    _exporter = exporter;
   }
 
   /// When false the mirror steps aside and shows your app once, full size.
