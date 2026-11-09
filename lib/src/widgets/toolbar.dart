@@ -9,8 +9,12 @@ class MirrorToolbar extends StatelessWidget {
     super.key,
     required this.controller,
     required this.fitScale,
+    this.onExport,
     this.extraActions = const [],
   });
+
+  /// Called by the export menu; null hides the export button.
+  final Future<void> Function({required bool perDevice})? onExport;
 
   /// The controller the toolbar edits.
   final ResponsiveMirrorController controller;
@@ -109,6 +113,25 @@ class MirrorToolbar extends StatelessWidget {
                 onPressed: controller.zoom == null ? null : controller.fit,
                 child: const Text('Fit'),
               ),
+              const _Divider(),
+              _IssuesButton(controller: controller),
+              if (onExport != null)
+                PopupMenuButton<bool>(
+                  key: const ValueKey('rm_export'),
+                  tooltip: 'Export PNG',
+                  icon: const Icon(Icons.image_outlined),
+                  onSelected: (perDevice) => onExport!(perDevice: perDevice),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: false,
+                      child: Text('Export the whole grid (PNG)'),
+                    ),
+                    PopupMenuItem(
+                      value: true,
+                      child: Text('Export each device (PNG, real resolution)'),
+                    ),
+                  ],
+                ),
               ...extraActions,
               const _Divider(),
               IconButton(
@@ -162,6 +185,32 @@ class _Toggle extends StatelessWidget {
       ),
       icon: Icon(icon),
       onPressed: () => onChanged(!value),
+    );
+  }
+}
+
+class _IssuesButton extends StatelessWidget {
+  const _IssuesButton({required this.controller});
+
+  final ResponsiveMirrorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = controller.issues.fold<int>(0, (s, i) => s + i.count);
+    return IconButton(
+      key: const ValueKey('rm_issues'),
+      tooltip: count == 0 ? 'No overflow or errors' : '$count issue(s)',
+      isSelected: controller.showIssues,
+      onPressed: () => controller.showIssues = !controller.showIssues,
+      icon: Badge(
+        isLabelVisible: count > 0,
+        backgroundColor: const Color(0xFFE5484D),
+        label: Text('$count'),
+        child: Icon(
+          count > 0 ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+          color: count > 0 ? const Color(0xFFFF8A8E) : null,
+        ),
+      ),
     );
   }
 }
