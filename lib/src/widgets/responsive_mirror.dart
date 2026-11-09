@@ -1,17 +1,23 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../controller.dart';
 import '../device.dart';
+import '../export/save.dart';
+import '../issues.dart';
 import '../slot.dart';
 import '../variant.dart';
 import '../sync/navigation_sync.dart';
 import '../sync/scroll_sync.dart';
 import 'device_frame.dart';
+import 'issues_panel.dart';
 import 'toolbar.dart';
 
 /// Builds one copy of your app for [slot].
@@ -54,6 +60,7 @@ class ResponsiveMirror extends StatefulWidget {
     this.zoom,
     this.showToolbar = true,
     this.backgroundColor = const Color(0xFF0E1016),
+    this.onExport,
   }) : assert(child != null || builder != null,
             'Provide either a child or a builder.');
 
@@ -100,6 +107,12 @@ class ResponsiveMirror extends StatefulWidget {
   /// Background of the canvas behind the devices.
   final Color backgroundColor;
 
+  /// Called with the PNGs produced by the toolbar's export button. When null
+  /// the files are saved for you: a download on the web,
+  /// `responsive_mirror_exports/` in the working directory on desktop, the
+  /// temp directory on mobile.
+  final Future<void> Function(List<MirrorExport> exports)? onExport;
+
   /// The [MirrorSlot] of the device [context] is rendered in, or null when
   /// [context] is not inside a mirror.
   static MirrorSlot? slotOf(BuildContext context) =>
@@ -143,6 +156,11 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
   final ScrollController _vertical = ScrollController();
   final ScrollController _horizontal = ScrollController();
   double _lastFitScale = 0.4;
+  final GlobalKey _gridKey = GlobalKey(debugLabel: 'responsive_mirror grid');
+  final Map<String, GlobalKey> _boundaryKeys = {};
+  final GlobalKey<ScaffoldMessengerState> _messengerKey = GlobalKey();
+  FlutterExceptionHandler? _previousOnError;
+  FlutterExceptionHandler? _installedOnError;
 
   ResponsiveMirrorController get _controller =>
       widget.controller ?? _ownController!;
@@ -153,6 +171,146 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
     if (widget.controller == null) _ownController = _createController();
     _nav = MirrorNavigationSync(isEnabled: () => _controller.syncNavigation);
     _scroll = MirrorScrollSync(isEnabled: () => _controller.syncScroll);
+    if (widget.enabled) _installErrorHandler();
+    _controller.attachExporter(_export);
+  }
+
+  // ---------------------------------------------------------------- issues
+
+  void _installErrorHandler() {
+    if (_installedOnError != null) return;
+    _previousOnError = FlutterError.onError;
+    _installedOnError = _onFlutterError;
+    FlutterError.onError = _installedOnError;
+  }
+
+  void _removeErrorHandler() {
+    if (_installedOnError == null) return;
+    if (FlutterError.onError == _installedOnError) {
+      FlutterError.onError = _previousOnError;
+    }
+    _installedOnError = null;
+    _previousOnError = null;
+  }
+
+  void _onFlutterError(FlutterErrorDetails details) {
+    try {
+      _recordIssue(details);
+    } catch (_) {
+      // Attribution is best effort; never hide the original error.
+    }
+    final previous = _previousOnError;
+    if (previous != null) {
+      previous(details);
+    } else {
+      FlutterError.presentError(details);
+    }
+  }
+
+  void _recordIssue(FlutterErrorDetails details) {
+    final slotId = MirrorIssueLocator.slotIdOf(details);
+    if (slotId == null || !mounted) return;
+    MirrorDevice? device;
+    MirrorVariant? variant;
+    for (final d in _controller.devices) {
+      for (final v in <MirrorVariant?>[null, ..._controller.variants]) {
+        if (MirrorSlot.idFor(d, v) == slotId) {
+          device = d;
+          variant = v;
+        }
+      }
+    }
+    if (device == null) return;
+    final message = details.exceptionAsString().split('\n').first.trim();
+    final issue = MirrorIssue(
+      slotId: slotId,
+      deviceName: device.name,
+      variantLabel: variant?.label,
+      kind: message.contains('overflowed')
+          ? MirrorIssueKind.overflow
+          : MirrorIssueKind.error,
+      message: message,
+      details: details,
+    );
+    final controller = _controller;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      // Errors are often reported during layout/paint: notify after the frame.
+      SchedulerBinding.instance
+          .addPostFrameCallback((_) => controller.reportIssue(issue));
+    } else {
+      controller.reportIssue(issue);
+    }
+  }
+
+  // ---------------------------------------------------------------- export
+
+  Future<List<MirrorExport>> _export({required bool perDevice}) async {
+    final exports = <MirrorExport>[];
+    Future<Uint8List?> capture(GlobalKey key, double pixelRatio) async {
+      final boundary = key.currentContext?.findRenderObject();
+      if (boundary is! RenderRepaintBoundary) return null;
+      final image = await boundary.toImage(pixelRatio: pixelRatio);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      return data?.buffer.asUint8List();
+    }
+
+    if (perDevice) {
+      for (final entry in _boundaryKeys.entries) {
+        final device = _deviceOf(entry.key);
+        final bytes = await capture(entry.value,
+            (device?.devicePixelRatio ?? 1).clamp(1, 3).toDouble());
+        if (bytes == null) continue;
+        exports.add(MirrorExport(
+          fileName:
+              'responsive_mirror_${entry.key.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_')}.png',
+          bytes: bytes,
+          slotId: entry.key,
+        ));
+      }
+    } else {
+      final scale = _controller.zoom ?? _lastFitScale;
+      final bytes =
+          await capture(_gridKey, (1.5 / scale).clamp(1.0, 4.0).toDouble());
+      if (bytes != null) {
+        exports.add(
+            MirrorExport(fileName: 'responsive_mirror_grid.png', bytes: bytes));
+      }
+    }
+    return exports;
+  }
+
+  MirrorDevice? _deviceOf(String slotId) {
+    for (final d in _controller.devices) {
+      if (slotId == d.id || slotId.endsWith('/${d.id}')) return d;
+    }
+    return null;
+  }
+
+  Future<void> _exportFromToolbar({required bool perDevice}) async {
+    final exports = await _export(perDevice: perDevice);
+    final onExport = widget.onExport;
+    String message;
+    if (onExport != null) {
+      await onExport(exports);
+      message =
+          'Exported ${exports.length} PNG${exports.length == 1 ? '' : 's'}';
+    } else {
+      final paths = <String>[];
+      for (final e in exports) {
+        final path = await savePng(e.fileName, e.bytes);
+        if (path != null) paths.add(path);
+      }
+      message = paths.isEmpty
+          ? 'Exported ${exports.length} PNG(s) (no file system here: use onExport)'
+          : 'Saved ${paths.length} PNG${paths.length == 1 ? '' : 's'}: ${paths.length == 1 ? paths.first : paths.first.substring(0, paths.first.lastIndexOf(RegExp(r'[\\/]')) + 1)}';
+    }
+    _messengerKey.currentState?.showSnackBar(SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+      width: 560,
+    ));
   }
 
   ResponsiveMirrorController _createController() => ResponsiveMirrorController(
@@ -180,10 +338,19 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
         !listEquals(widget.variants, oldWidget.variants)) {
       _ownController!.variants = widget.variants;
     }
+    oldWidget.controller?.attachExporter(null);
+    _controller.attachExporter(_export);
+    if (widget.enabled) {
+      _installErrorHandler();
+    } else {
+      _removeErrorHandler();
+    }
   }
 
   @override
   void dispose() {
+    _removeErrorHandler();
+    widget.controller?.attachExporter(null);
     _ownController?.dispose();
     _vertical.dispose();
     _horizontal.dispose();
@@ -204,6 +371,7 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
       builder: (context, _) {
         if (!_controller.mirrorVisible) return _buildSingle(context);
         return MaterialApp(
+          scaffoldMessengerKey: _messengerKey,
           debugShowCheckedModeBanner: false,
           title: 'responsive_mirror',
           theme: ThemeData(
@@ -228,8 +396,15 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
                     MirrorToolbar(
                       controller: _controller,
                       fitScale: () => _lastFitScale,
+                      onExport: _exportFromToolbar,
                     ),
-                  Expanded(child: _buildCanvas()),
+                  Expanded(
+                    child: Row(children: [
+                      Expanded(child: _buildCanvas()),
+                      if (_controller.showIssues)
+                        MirrorIssuesPanel(controller: _controller),
+                    ]),
+                  ),
                 ],
               );
             }),
@@ -338,7 +513,6 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
       }
       final variants = _controller.visibleVariants;
       final sections = variants.isEmpty ? <MirrorVariant?>[null] : variants;
-      _lastFitScale = _fitScale(devices, constraints.biggest, sections.length);
       final scale = _controller.zoom ?? _lastFitScale;
       final widest =
           devices.map((d) => d.size.width * scale + 40).reduce(math.max);
@@ -388,17 +562,23 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
               child: SingleChildScrollView(
                 controller: _horizontal,
                 scrollDirection: Axis.horizontal,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minWidth: contentWidth,
-                    maxWidth: contentWidth,
-                    minHeight:
-                        math.max(0, constraints.maxHeight - _padding * 2),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [for (final v in sections) section(v)],
+                child: RepaintBoundary(
+                  key: _gridKey,
+                  child: ColoredBox(
+                    color: widget.backgroundColor,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minWidth: contentWidth,
+                        maxWidth: contentWidth,
+                        minHeight:
+                            math.max(0, constraints.maxHeight - _padding * 2),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [for (final v in sections) section(v)],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -415,6 +595,10 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
       key: ValueKey(id),
       device: device,
       scale: scale,
+      issues: _controller.issuesFor(id),
+      onIssuesTap: () => _controller.showIssues = true,
+      boundaryKey: _boundaryKeys.putIfAbsent(
+          id, () => GlobalKey(debugLabel: 'responsive_mirror $id')),
       slot: MirrorSlot(
         id: id,
         device: device,
@@ -475,6 +659,9 @@ class _DeviceTile extends StatelessWidget {
     required this.nav,
     required this.scroll,
     required this.appBuilder,
+    required this.boundaryKey,
+    this.issues = const [],
+    this.onIssuesTap,
   });
 
   final MirrorDevice device;
@@ -483,6 +670,9 @@ class _DeviceTile extends StatelessWidget {
   final MirrorNavigationSync nav;
   final MirrorScrollSync scroll;
   final MirrorAppBuilder appBuilder;
+  final GlobalKey boundaryKey;
+  final List<MirrorIssue> issues;
+  final VoidCallback? onIssuesTap;
 
   @override
   Widget build(BuildContext context) {
@@ -500,34 +690,132 @@ class _DeviceTile extends StatelessWidget {
             nav: nav,
             scroll: scroll,
             appBuilder: appBuilder,
+            boundaryKey: boundaryKey,
           ),
         ),
       ),
     );
+    final count = issues.fold<int>(0, (s, i) => s + i.count);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
           height: 28,
-          child: Text.rich(
-            TextSpan(children: [
-              TextSpan(
-                text: device.name,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text.rich(
+              TextSpan(children: [
+                TextSpan(
+                  text: device.name,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+                TextSpan(
+                  text: '   ${device.specLabel}',
+                  style: const TextStyle(color: Colors.white54),
+                ),
+              ]),
+              style: const TextStyle(fontSize: 13),
+            ),
+            if (count > 0) ...[
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onIssuesTap,
+                child: Container(
+                  key: ValueKey('rm_issue_badge_${slot.id}'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5484D),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        size: 14, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text('$count',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700)),
+                  ]),
+                ),
               ),
-              TextSpan(
-                text: '   ${device.specLabel}',
-                style: const TextStyle(color: Colors.white54),
-              ),
-            ]),
-            style: const TextStyle(fontSize: 13),
-          ),
+            ],
+          ]),
         ),
-        MirrorDeviceFrame(device: device, scale: scale, screen: screen),
+        MirrorDeviceFrame(
+          device: device,
+          scale: scale,
+          screen: screen,
+          highlight: count > 0 ? const Color(0xFFE5484D) : null,
+        ),
       ],
     );
   }
+}
+
+/// Finds which mirror slot a [FlutterErrorDetails] came from by walking up
+/// from the render object or element named in the error to the slot marker.
+abstract final class MirrorIssueLocator {
+  /// The slot id, or null when the error did not come from a mirrored device.
+  static String? slotIdOf(FlutterErrorDetails details) {
+    final collector = details.informationCollector;
+    if (collector == null) return null;
+    for (final node in collector()) {
+      final value = node.value;
+      if (value is RenderObject) {
+        final id = _fromRenderObject(value);
+        if (id != null) return id;
+      } else if (value is DebugCreator) {
+        final id = _fromElement(value.element);
+        if (id != null) return id;
+      } else if (value is Element) {
+        final id = _fromElement(value);
+        if (id != null) return id;
+      }
+    }
+    return null;
+  }
+
+  static String? _fromRenderObject(RenderObject object) {
+    RenderObject? node = object;
+    while (node != null) {
+      if (node is _RenderSlotMarker) return node.slotId;
+      node = node.parent;
+    }
+    return null;
+  }
+
+  static String? _fromElement(Element element) {
+    try {
+      return element.findAncestorWidgetOfExactType<_SlotMarker>()?.slotId;
+    } catch (_) {
+      final ro = element.renderObject;
+      return ro == null ? null : _fromRenderObject(ro);
+    }
+  }
+}
+
+class _SlotMarker extends SingleChildRenderObjectWidget {
+  const _SlotMarker({required this.slotId, super.child});
+
+  final String slotId;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderSlotMarker(slotId);
+
+  @override
+  void updateRenderObject(
+      BuildContext context, _RenderSlotMarker renderObject) {
+    renderObject.slotId = slotId;
+  }
+}
+
+class _RenderSlotMarker extends RenderProxyBox {
+  _RenderSlotMarker(this.slotId);
+
+  String slotId;
 }
 
 /// Hosts one copy of the app at the device's logical size.
@@ -540,7 +828,11 @@ class MirrorDeviceHost extends StatefulWidget {
     required this.nav,
     required this.scroll,
     required this.appBuilder,
+    this.boundaryKey,
   });
+
+  /// Key of the [RepaintBoundary] around the app (used for PNG export).
+  final GlobalKey? boundaryKey;
 
   /// The slot rendered here.
   final MirrorSlot slot;
@@ -600,7 +892,10 @@ class _MirrorDeviceHostState extends State<MirrorDeviceHost> {
         slot: slot,
         child: NotificationListener<ScrollNotification>(
           onNotification: (n) => widget.scroll.handle(slot.id, n),
-          child: RepaintBoundary(child: app),
+          child: RepaintBoundary(
+            key: widget.boundaryKey,
+            child: _SlotMarker(slotId: slot.id, child: app),
+          ),
         ),
       ),
     );
