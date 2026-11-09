@@ -1,2 +1,13 @@
 # responsive_mirror
-See your Flutter app on phone, tablet, laptop and desktop at once, with navigation and scroll in sync. Works on Windows, Linux, macOS and web.
+
+See your Flutter app on a phone, a tablet, a laptop and a desktop **at the same
+time**, with navigation and scrolling kept in sync.
+
+```dart
+void main() => runApp(ResponsiveMirror(child: MyApp()));
+```
+
+It is a plain widget, so it runs wherever Flutter runs: Windows, Linux, macOS
+and the web.
+
+> Work in progress. See CHANGELOG.md.
