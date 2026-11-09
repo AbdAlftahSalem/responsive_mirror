@@ -907,20 +907,28 @@ class _DeviceTile extends StatelessWidget {
       children: [
         SizedBox(
           height: 28,
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text.rich(
-              TextSpan(children: [
-                TextSpan(
-                  text: device.name,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w600),
-                ),
-                TextSpan(
-                  text: '   ${device.specLabel}',
-                  style: const TextStyle(color: Colors.white54),
-                ),
-              ]),
-              style: const TextStyle(fontSize: 13),
+          // As wide as the frame: badges never change the tile's width, so the
+          // grid does not re-flow when a device goes red or out of sync.
+          width: MirrorDeviceFrame.outerSize(device, scale).width,
+          child: Row(children: [
+            Flexible(
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                    text: device.name,
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                  TextSpan(
+                    text: '   ${device.specLabel}',
+                    style: const TextStyle(color: Colors.white54),
+                  ),
+                ]),
+                style: const TextStyle(fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+              ),
             ),
             if (outOfSync != null) ...[
               const SizedBox(width: 8),
