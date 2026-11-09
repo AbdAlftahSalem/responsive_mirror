@@ -75,7 +75,7 @@ class MirrorTarget {
 /// copy of the app; synthesises taps.
 abstract final class MirrorTargetFinder {
   /// How far up from a gesture detector to look for a key or a label.
-  static const int ancestorDepth = 10;
+  static const int ancestorDepth = 40;
 
   static bool _isTappable(Element e) {
     final widget = e.widget;
@@ -108,6 +108,33 @@ abstract final class MirrorTargetFinder {
     return hit.path.any((entry) => identical(entry.target, box));
   }
 
+  /// Whether walking up from a target should stop at [e] (a list, a page or
+  /// another tappable: keys above it describe something bigger).
+  static bool _isBoundary(Element e) {
+    final w = e.widget;
+    return w is Scrollable ||
+        w is Navigator ||
+        w is Overlay ||
+        (w is RawGestureDetector &&
+            w.gestures.containsKey(TapGestureRecognizer) &&
+            !_isTooltipDetector(e));
+  }
+
+  /// A [Tooltip] wraps its child in its own gesture detector; that one is not
+  /// a separate tappable.
+  static bool _isTooltipDetector(Element e) {
+    var isTooltip = false;
+    var depth = 0;
+    e.visitAncestorElements((a) {
+      if (a.widget is Tooltip) {
+        isTooltip = true;
+        return false;
+      }
+      return ++depth < 4;
+    });
+    return isTooltip;
+  }
+
   static String? _keyOf(Element element) {
     String? found;
     var depth = 0;
@@ -117,6 +144,7 @@ abstract final class MirrorTargetFinder {
         found = key.value.toString();
         return false;
       }
+      if (!identical(e, element) && _isBoundary(e)) return false;
       return ++depth < ancestorDepth;
     }
 
@@ -139,6 +167,7 @@ abstract final class MirrorTargetFinder {
         found = w.decoration?.labelText ?? w.decoration?.hintText;
       }
       if (found != null) return false;
+      if (!identical(e, element) && _isBoundary(e)) return false;
       return ++depth < ancestorDepth;
     }
 
@@ -167,6 +196,7 @@ abstract final class MirrorTargetFinder {
     final parts = <String>[];
     void visit(Element e) {
       final w = e.widget;
+      if (w is Icon || w is ImageIcon) return; // glyphs are not text
       if (w is RichText) {
         final t = w.text.toPlainText().trim();
         if (t.isNotEmpty) parts.add(t);
@@ -206,6 +236,25 @@ abstract final class MirrorTargetFinder {
       return ++depth < 4;
     });
     return type;
+  }
+
+  /// Whether tapping [element] would focus a text field (the tap itself is
+  /// then not replayed: in a browser, focusing the field in another frame
+  /// would steal the keyboard from the device you are typing on; the text is
+  /// mirrored instead).
+  static bool focusesTextField(Element element) {
+    var found = false;
+    void visit(Element e) {
+      if (found) return;
+      if (e.widget is EditableText) {
+        found = true;
+        return;
+      }
+      e.visitChildren(visit);
+    }
+
+    visit(element);
+    return found;
   }
 
   /// Visible tappable elements under [root], in tree order.
