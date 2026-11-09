@@ -1,0 +1,30 @@
+name: responsive_mirror
+description: >-
+  Preview your Flutter app on phones, tablets, laptops and desktops side by
+  side, with navigation and scrolling mirrored. Works on Windows, Linux, macOS
+  and web because it is a plain widget.
+version: 0.1.0
+homepage: https://github.com/AbdAlftahSalem/responsive_mirror
+repository: https://github.com/AbdAlftahSalem/responsive_mirror
+issue_tracker: https://github.com/AbdAlftahSalem/responsive_mirror/issues
+topics:
+  - responsive
+  - device-preview
+  - testing
+  - layout
+  - developer-tools
+
+environment:
+  sdk: ^3.6.0
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
