@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'device.dart';
+import 'variant.dart';
 
 /// Holds the state of a `ResponsiveMirror`: which devices are shown, the zoom
 /// level and which kinds of synchronisation are on.
@@ -19,7 +20,13 @@ class ResponsiveMirrorController extends ChangeNotifier {
     bool syncNavigation = true,
     bool syncScroll = true,
     bool mirrorVisible = true,
+    List<MirrorVariant> variants = const [],
+    Iterable<String>? visibleVariantIds,
   })  : _devices = List.unmodifiable(devices),
+        _variants = List.unmodifiable(variants),
+        _visibleVariants = {
+          ...(visibleVariantIds ?? variants.map((v) => v.id))
+        },
         _visible = {...(visibleDeviceIds ?? devices.map((d) => d.id))},
         _zoom = zoom == null ? null : _clampZoom(zoom),
         _syncNavigation = syncNavigation,
@@ -28,6 +35,10 @@ class ResponsiveMirrorController extends ChangeNotifier {
     assert(
       devices.map((d) => d.id).toSet().length == devices.length,
       'Every MirrorDevice needs a unique id.',
+    );
+    assert(
+      variants.map((v) => v.id).toSet().length == variants.length,
+      'Every MirrorVariant needs a unique id.',
     );
   }
 
@@ -41,6 +52,8 @@ class ResponsiveMirrorController extends ChangeNotifier {
 
   List<MirrorDevice> _devices;
   final Set<String> _visible;
+  List<MirrorVariant> _variants;
+  final Set<String> _visibleVariants;
   double? _zoom;
   bool _syncNavigation;
   bool _syncScroll;
@@ -71,6 +84,36 @@ class ResponsiveMirrorController extends ChangeNotifier {
   /// Flips the visibility of [device].
   void toggleDevice(MirrorDevice device) =>
       setVisible(device, !isVisible(device));
+
+  /// Every variant the mirror knows about. Empty means "no variants": each
+  /// device is rendered once, with the app's own locale and theme.
+  List<MirrorVariant> get variants => _variants;
+  set variants(List<MirrorVariant> value) {
+    _variants = List.unmodifiable(value);
+    _visibleVariants.removeWhere((id) => !value.any((v) => v.id == id));
+    notifyListeners();
+  }
+
+  /// Variants currently rendered, in [variants] order.
+  List<MirrorVariant> get visibleVariants => _variants
+      .where((v) => _visibleVariants.contains(v.id))
+      .toList(growable: false);
+
+  /// Whether [variant] is currently rendered.
+  bool isVariantVisible(MirrorVariant variant) =>
+      _visibleVariants.contains(variant.id);
+
+  /// Shows or hides [variant].
+  void setVariantVisible(MirrorVariant variant, bool visible) {
+    final changed = visible
+        ? _visibleVariants.add(variant.id)
+        : _visibleVariants.remove(variant.id);
+    if (changed) notifyListeners();
+  }
+
+  /// Flips the visibility of [variant].
+  void toggleVariant(MirrorVariant variant) =>
+      setVariantVisible(variant, !isVariantVisible(variant));
 
   /// Zoom factor applied to every device (1.0 = one logical pixel per logical
   /// pixel). Null means "fit to width".

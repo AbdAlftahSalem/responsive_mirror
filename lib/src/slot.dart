@@ -1,6 +1,7 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
 import 'device.dart';
+import 'variant.dart';
 
 /// Everything one rendered copy of your app needs to know about where it is
 /// running: the device, and the navigator observer that keeps it in sync.
@@ -14,7 +15,12 @@ class MirrorSlot {
     required this.id,
     required this.device,
     required this.navigatorObserver,
+    this.variant,
   });
+
+  /// Builds the slot id for [device] in [variant].
+  static String idFor(MirrorDevice device, [MirrorVariant? variant]) =>
+      variant == null ? device.id : '${variant.id}/${device.id}';
 
   /// Unique id of this copy inside the mirror.
   final String id;
@@ -25,6 +31,18 @@ class MirrorSlot {
   /// Add this to `MaterialApp.navigatorObservers` so navigation is mirrored.
   final NavigatorObserver navigatorObserver;
 
+  /// The variant (locale / theme / text scale) of this copy, if any.
+  final MirrorVariant? variant;
+
+  /// Locale this copy should use, or null to keep the app's own.
+  Locale? get locale => variant?.locale;
+
+  /// Theme mode this copy should use, or null to keep the app's own.
+  ThemeMode? get themeMode => variant?.themeMode;
+
+  /// Text direction implied by the variant, if any.
+  TextDirection? get textDirection => variant?.resolvedTextDirection;
+
   /// The platform suggested by [device]; pass it to `ThemeData.platform` for a
   /// per-device platform look.
   TargetPlatform get platform => device.platform;
@@ -34,10 +52,11 @@ class MirrorSlot {
       other is MirrorSlot &&
       other.id == id &&
       other.device == device &&
+      other.variant == variant &&
       other.navigatorObserver == navigatorObserver;
 
   @override
-  int get hashCode => Object.hash(id, device, navigatorObserver);
+  int get hashCode => Object.hash(id, device, variant, navigatorObserver);
 }
 
 /// Makes a [MirrorSlot] available to the app subtree rendered inside it.
