@@ -1,3 +1,28 @@
+## 0.4.0
+
+* Isolated mode (`mode: MirrorMode.isolated`, **Flutter web only**): every
+  device runs as its own instance of your web build, in an iframe, with its
+  own state. The frame loads the same page with `?rm_frame=…`;
+  `ResponsiveMirror` notices it is inside a frame and wraps your app in a
+  `ResponsiveMirrorAgent` instead of drawing the grid, so no code change is
+  needed beyond the `mode` flag.
+* The agent records taps, text input and scrolling and the host relays them
+  (`postMessage`) to the other devices, which replay them on the matching
+  widget. Targets are matched by `ValueKey`, then semantics label / tooltip /
+  input label, then visible text, then position among identical candidates —
+  never by coordinates, because every device has its own layout.
+* A device where the target does not exist (for example a desktop-only side
+  panel) is marked **out of sync** with the reason; the next action that
+  matches clears it. Taps on fields are not replayed (that would steal the
+  keyboard in a browser); their text is mirrored instead.
+* Errors inside a frame are reported to the host and show up on the device
+  badge and in the issues panel, like in-process mode.
+* On other platforms `MirrorMode.isolated` falls back to in-process mode with
+  a debug message. Why: separate instances of a Flutter desktop app need
+  separate engines/windows, which a widget inside one app cannot embed today;
+  the web has iframes.
+* Fix: device labels never widen a tile, so badges no longer re-flow the grid.
+
 ## 0.3.1
 
 * Fix: the whole-grid PNG is now composed from per-device captures, so
