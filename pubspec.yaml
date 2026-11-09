@@ -1,13 +1,21 @@
 name: responsive_mirror
 description: >-
   Preview your Flutter app on phones, tablets, laptops and desktops side by
-  side, in several locales (RTL/LTR) and themes, with navigation and scrolling
-  mirrored. Works on Windows, Linux, macOS
-  and web because it is a plain widget.
+  side with navigation and scrolling in sync, RTL/LTR and dark/light variants,
+  a per-device overflow report and PNG export. Windows, Linux, macOS and web.
 version: 0.4.0
 homepage: https://github.com/AbdAlftahSalem/responsive_mirror
 repository: https://github.com/AbdAlftahSalem/responsive_mirror
 issue_tracker: https://github.com/AbdAlftahSalem/responsive_mirror/issues
+screenshots:
+  - description: Four devices side by side (phone, tablet, laptop, desktop).
+    path: doc/screenshots/grid.jpg
+  - description: English light next to Arabic (RTL) dark.
+    path: doc/screenshots/variants.jpg
+  - description: Overflow badge on the phone and the issues panel.
+    path: doc/screenshots/overflow.jpg
+  - description: Isolated mode with devices marked out of sync.
+    path: doc/screenshots/isolated.jpg
 topics:
   - responsive
   - device-preview
