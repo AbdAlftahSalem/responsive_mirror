@@ -28,6 +28,12 @@ void main() {
     ResponsiveMirror(
       enabled: true,
       controller: controller,
+      // Web only: `?mode=isolated` runs every device as its own instance of
+      // this web build (one iframe each, separate state); taps, text and
+      // scrolling are replayed between them.
+      mode: query['mode'] == 'isolated'
+          ? MirrorMode.isolated
+          : MirrorMode.inProcess,
       child: const ShopApp(),
     ),
   );
