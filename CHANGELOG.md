@@ -1,3 +1,12 @@
+## 0.3.1
+
+* Fix: the whole-grid PNG is now composed from per-device captures, so
+  devices scrolled off screen are included and nothing is clipped. Rows are
+  labelled with the variant, devices with name and size, offending devices
+  outlined in red.
+* Fix: when every device is replaced at once (for example switching variants
+  on), the new devices open on the page the old ones were on.
+
 ## 0.3.0
 
 * Overflow and error report: every `FlutterError` (RenderFlex overflow,
