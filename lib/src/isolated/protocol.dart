@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -50,6 +52,24 @@ class MirrorRelay extends ChangeNotifier {
 
   final Set<String> _ready = {};
   final Map<String, String> _outOfSync = {};
+  final Map<int, Completer<Uint8List?>> _captures = {};
+  int _nextCapture = 0;
+
+  /// Asks the agent of [slotId] for a PNG of its screen at [pixelRatio]
+  /// (a frame cannot be captured from the host: it is a separate page).
+  /// Completes with null when the agent does not answer within [timeout].
+  Future<Uint8List?> capture(String slotId, double pixelRatio,
+      {Duration timeout = const Duration(seconds: 15)}) {
+    if (!_ready.contains(slotId)) return Future.value(null);
+    final id = _nextCapture++;
+    final completer = Completer<Uint8List?>();
+    _captures[id] = completer;
+    sendTo(slotId, {'type': 'capture', 'id': id, 'ratio': pixelRatio});
+    return completer.future.timeout(timeout, onTimeout: () {
+      _captures.remove(id);
+      return null;
+    });
+  }
 
   /// Slots whose agent is up and listening.
   Set<String> get readySlots => Set.unmodifiable(_ready);
@@ -89,6 +109,11 @@ class MirrorRelay extends ChangeNotifier {
         if (_outOfSync.remove(from) != null) notifyListeners();
       case 'issue':
         onIssue?.call(from, '${message['message']}');
+      case 'png':
+        final id = message['id'];
+        final completer = id is num ? _captures.remove(id.toInt()) : null;
+        final data = message['data'];
+        completer?.complete(data is String ? base64Decode(data) : null);
     }
   }
 
