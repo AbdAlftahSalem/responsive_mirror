@@ -9,6 +9,9 @@ class Product {
   final String? nameAr;
 
   String localizedName(bool arabic) => arabic ? (nameAr ?? name) : name;
+
+  /// One of [ShopStore.categories] (not 'All').
+  String get category => ShopStore.categories[1 + id % 3];
   final double price;
   final int colorValue;
 }
@@ -21,6 +24,19 @@ class ShopStore extends ChangeNotifier {
       Product(i, _names[i], 9.0 + (i * 7) % 40, _colors[i % _colors.length],
           _namesAr[i]),
   ];
+
+  static const categories = ['All', 'Kitchen', 'Decor', 'Living'];
+
+  String _filter = 'All';
+  String get filter => _filter;
+  set filter(String value) {
+    _filter = value;
+    notifyListeners();
+  }
+
+  List<Product> get visibleProducts => _filter == 'All'
+      ? products
+      : products.where((p) => p.category == _filter).toList();
 
   int _cart = 0;
   int get cartCount => _cart;
