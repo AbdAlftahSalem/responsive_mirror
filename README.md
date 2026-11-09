@@ -196,6 +196,12 @@ breakpoints, locale/theme matrices and the overflow report.
   `localStorage` / IndexedDB (tokens, caches). Signing in on all devices at
   the same moment can race; sign in once with input sync off (or reload after
   signing in) and every instance starts signed in.
+* In isolated mode a tap is matched by key, then label, then text. Across
+  languages the text differs, so give tap targets a `ValueKey` if you mirror
+  an Arabic row next to an English one.
+* Every isolated frame is a full Flutter web engine with its own WebGL
+  context, and Chrome keeps only about 16 per page: keep isolated mode to
+  about 6–8 devices (e.g. 3 devices × 2 variants).
 * Isolated mode is **web only**. Separate instances of a Flutter desktop app
   need separate engines or windows, which a widget inside one app cannot embed
   today; the web has iframes. On other platforms it falls back to in-process
