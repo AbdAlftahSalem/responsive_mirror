@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../controller.dart';
 import '../device.dart';
 import '../slot.dart';
+import '../variant.dart';
 import '../sync/navigation_sync.dart';
 import '../sync/scroll_sync.dart';
 import 'device_frame.dart';
@@ -45,6 +46,7 @@ class ResponsiveMirror extends StatefulWidget {
     this.child,
     this.builder,
     this.devices = MirrorDevices.defaults,
+    this.variants = const [],
     this.controller,
     this.enabled = kDebugMode,
     this.syncNavigation = true,
@@ -64,6 +66,17 @@ class ResponsiveMirror extends StatefulWidget {
 
   /// Devices to show when no [controller] is given.
   final List<MirrorDevice> devices;
+
+  /// Variants to render every device in (locale / theme / text scale) when
+  /// no [controller] is given. Empty renders each device once.
+  ///
+  /// ```dart
+  /// variants: MirrorVariant.matrix(
+  ///   [MirrorVariant.english, MirrorVariant.arabic],
+  ///   [MirrorVariant.light, MirrorVariant.dark],
+  /// ),
+  /// ```
+  final List<MirrorVariant> variants;
 
   /// Optional external controller.
   final ResponsiveMirrorController? controller;
@@ -94,6 +107,17 @@ class ResponsiveMirror extends StatefulWidget {
 
   /// Whether [context] is rendered inside a mirror device.
   static bool isMirrored(BuildContext context) => slotOf(context) != null;
+
+  /// The locale the current variant asks for, or null (keep your own).
+  ///
+  /// `MaterialApp(locale: ResponsiveMirror.localeOf(context) ?? myLocale)`
+  static Locale? localeOf(BuildContext context) => slotOf(context)?.locale;
+
+  /// The theme mode the current variant asks for, or null (keep your own).
+  ///
+  /// `MaterialApp(themeMode: ResponsiveMirror.themeModeOf(context) ?? ThemeMode.system)`
+  static ThemeMode? themeModeOf(BuildContext context) =>
+      slotOf(context)?.themeMode;
 
   static final Expando<NavigatorObserver> _passthroughObservers =
       Expando<NavigatorObserver>('responsive_mirror passthrough observer');
@@ -133,6 +157,7 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
 
   ResponsiveMirrorController _createController() => ResponsiveMirrorController(
         devices: widget.devices,
+        variants: widget.variants,
         zoom: widget.zoom,
         syncNavigation: widget.syncNavigation,
         syncScroll: widget.syncScroll,
@@ -150,6 +175,10 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
     if (_ownController != null &&
         !listEquals(widget.devices, oldWidget.devices)) {
       _ownController!.devices = widget.devices;
+    }
+    if (_ownController != null &&
+        !listEquals(widget.variants, oldWidget.variants)) {
+      _ownController!.variants = widget.variants;
     }
   }
 
@@ -184,16 +213,26 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
           ),
           home: Scaffold(
             backgroundColor: widget.backgroundColor,
-            body: Column(
-              children: [
-                if (widget.showToolbar)
-                  MirrorToolbar(
-                    controller: _controller,
-                    fitScale: () => _lastFitScale,
-                  ),
-                Expanded(child: _buildCanvas()),
-              ],
-            ),
+            body: LayoutBuilder(builder: (context, constraints) {
+              final toolbarHeight = widget.showToolbar ? 56.0 : 0.0;
+              final variants = _controller.visibleVariants.length;
+              _lastFitScale = _fitScale(
+                _controller.visibleDevices,
+                Size(constraints.maxWidth,
+                    constraints.maxHeight - toolbarHeight),
+                variants == 0 ? 1 : variants,
+              );
+              return Column(
+                children: [
+                  if (widget.showToolbar)
+                    MirrorToolbar(
+                      controller: _controller,
+                      fitScale: () => _lastFitScale,
+                    ),
+                  Expanded(child: _buildCanvas()),
+                ],
+              );
+            }),
           ),
         );
       },
@@ -230,16 +269,48 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
   static const double _padding = 24;
   static const double _labelHeight = 28;
 
-  double _fitScale(List<MirrorDevice> devices, Size available) {
+  static const double _sectionHeader = 36;
+
+  double _fitScale(List<MirrorDevice> devices, Size available, int sections) {
     if (devices.isEmpty) return 0.4;
-    final widths = devices.fold<double>(0, (s, d) => s + d.size.width);
-    final fixed =
-        _padding * 2 + _spacing * (devices.length - 1) + devices.length * 28;
-    final byWidth = (available.width - fixed) / widths;
-    final tallest = devices.map((d) => d.size.height).reduce(math.max);
-    final byHeight =
-        (available.height - _padding * 2 - _labelHeight - 80) / tallest;
-    return math.max(0.08, math.min(1.0, math.min(byWidth, byHeight)));
+    final width = available.width - _padding * 2;
+    final height = available.height - _padding * 2;
+    final sectionExtra = sections > 1 ? _sectionHeader + _spacing : 0.0;
+
+    // Height of one section (a Wrap of device tiles) at [scale].
+    double? sectionHeight(double scale) {
+      var rowWidth = 0.0, rowHeight = 0.0, total = 0.0;
+      var rows = 0;
+      for (final device in devices) {
+        final size = MirrorDeviceFrame.outerSize(device, scale);
+        final tileHeight = size.height + _labelHeight;
+        if (size.width > width) return null;
+        if (rowWidth > 0 && rowWidth + _spacing + size.width > width) {
+          total += rowHeight;
+          rows++;
+          rowWidth = 0;
+          rowHeight = 0;
+        }
+        rowWidth += (rowWidth > 0 ? _spacing : 0) + size.width;
+        rowHeight = math.max(rowHeight, tileHeight);
+      }
+      total += rowHeight;
+      return total + rows * _spacing + sectionExtra;
+    }
+
+    double best(int fitSections) {
+      for (var scale = 1.0; scale > 0.08; scale -= 0.01) {
+        final h = sectionHeight(scale);
+        if (h != null && h * fitSections <= height) return scale;
+      }
+      return 0.08;
+    }
+
+    // Try to fit every variant row on screen; if that makes the devices too
+    // small, fit one row and let the canvas scroll vertically.
+    final all = best(sections);
+    if (sections > 1 && all < 0.2) return best(1);
+    return all;
   }
 
   void _onPointerSignal(PointerSignalEvent event) {
@@ -265,28 +336,45 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
               style: TextStyle(color: Colors.white54)),
         );
       }
-      _lastFitScale = _fitScale(devices, constraints.biggest);
+      final variants = _controller.visibleVariants;
+      final sections = variants.isEmpty ? <MirrorVariant?>[null] : variants;
+      _lastFitScale = _fitScale(devices, constraints.biggest, sections.length);
       final scale = _controller.zoom ?? _lastFitScale;
       final widest =
           devices.map((d) => d.size.width * scale + 40).reduce(math.max);
       final contentWidth =
           math.max(constraints.maxWidth - _padding * 2, widest);
-      final tiles = [
-        for (final device in devices)
-          _DeviceTile(
-            key: ValueKey(device.id),
-            device: device,
-            scale: scale,
-            slot: MirrorSlot(
-              id: device.id,
-              device: device,
-              navigatorObserver: _nav.observerFor(device.id),
-            ),
-            nav: _nav,
-            scroll: _scroll,
-            appBuilder: _buildApp,
+      Widget section(MirrorVariant? variant) {
+        final wrap = Wrap(
+          spacing: _spacing,
+          runSpacing: _spacing,
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          children: [
+            for (final device in devices) _tile(device, variant, scale),
+          ],
+        );
+        if (variant == null) return wrap;
+        return Padding(
+          key: ValueKey('rm_section_${variant.id}'),
+          padding: const EdgeInsets.only(bottom: _spacing),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: _sectionHeader,
+                child: Row(children: [
+                  _VariantBadge(variant: variant),
+                  const SizedBox(width: 12),
+                  const Expanded(child: Divider(color: Colors.white12)),
+                ]),
+              ),
+              wrap,
+            ],
           ),
-      ];
+        );
+      }
+
       return Listener(
         onPointerSignal: _onPointerSignal,
         child: Scrollbar(
@@ -300,14 +388,17 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
               child: SingleChildScrollView(
                 controller: _horizontal,
                 scrollDirection: Axis.horizontal,
-                child: SizedBox(
-                  width: contentWidth,
-                  child: Wrap(
-                    spacing: _spacing,
-                    runSpacing: _spacing,
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.end,
-                    children: tiles,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minWidth: contentWidth,
+                    maxWidth: contentWidth,
+                    minHeight:
+                        math.max(0, constraints.maxHeight - _padding * 2),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [for (final v in sections) section(v)],
                   ),
                 ),
               ),
@@ -316,6 +407,62 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
         ),
       );
     });
+  }
+
+  Widget _tile(MirrorDevice device, MirrorVariant? variant, double scale) {
+    final id = MirrorSlot.idFor(device, variant);
+    return _DeviceTile(
+      key: ValueKey(id),
+      device: device,
+      scale: scale,
+      slot: MirrorSlot(
+        id: id,
+        device: device,
+        variant: variant,
+        navigatorObserver: _nav.observerFor(id),
+      ),
+      nav: _nav,
+      scroll: _scroll,
+      appBuilder: _buildApp,
+    );
+  }
+}
+
+class _VariantBadge extends StatelessWidget {
+  const _VariantBadge({required this.variant});
+
+  final MirrorVariant variant;
+
+  @override
+  Widget build(BuildContext context) {
+    final dir = variant.resolvedTextDirection;
+    final icons = <IconData>[
+      if (variant.locale != null) Icons.translate,
+      if (variant.themeMode == ThemeMode.dark) Icons.dark_mode,
+      if (variant.themeMode == ThemeMode.light) Icons.light_mode,
+      if (variant.textScale != null) Icons.format_size,
+    ];
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF232838),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        for (final icon in icons) ...[
+          Icon(icon, size: 15, color: const Color(0xFF8C97FF)),
+          const SizedBox(width: 6),
+        ],
+        Text(variant.label,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w600)),
+        if (dir != null) ...[
+          const SizedBox(width: 8),
+          Text(dir == TextDirection.rtl ? 'RTL' : 'LTR',
+              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+        ],
+      ]),
+    );
   }
 }
 
@@ -437,16 +584,23 @@ class _MirrorDeviceHostState extends State<MirrorDeviceHost> {
   @override
   Widget build(BuildContext context) {
     final slot = widget.slot;
+    var media = slot.device.applyTo(MediaQuery.of(context));
+    final variant = slot.variant;
+    if (variant != null) media = variant.applyTo(media);
+    Widget app = Builder(
+      builder: (context) => widget.appBuilder(context, slot),
+    );
+    final direction = slot.textDirection;
+    if (direction != null) {
+      app = Directionality(textDirection: direction, child: app);
+    }
     return MediaQuery(
-      data: slot.device.applyTo(MediaQuery.of(context)),
+      data: media,
       child: MirrorSlotScope(
         slot: slot,
         child: NotificationListener<ScrollNotification>(
           onNotification: (n) => widget.scroll.handle(slot.id, n),
-          child: RepaintBoundary(
-            child:
-                Builder(builder: (context) => widget.appBuilder(context, slot)),
-          ),
+          child: RepaintBoundary(child: app),
         ),
       ),
     );

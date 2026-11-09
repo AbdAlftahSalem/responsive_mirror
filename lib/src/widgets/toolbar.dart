@@ -52,6 +52,21 @@ class MirrorToolbar extends StatelessWidget {
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
+              if (controller.variants.isNotEmpty) ...[
+                const _Divider(),
+                for (final variant in controller.variants)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: FilterChip(
+                      key: ValueKey('rm_variant_chip_${variant.id}'),
+                      avatar: const Icon(Icons.layers_outlined, size: 16),
+                      label: Text(variant.label),
+                      selected: controller.isVariantVisible(variant),
+                      onSelected: (_) => controller.toggleVariant(variant),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+              ],
               const _Divider(),
               _Toggle(
                 key: const ValueKey('rm_sync_nav'),

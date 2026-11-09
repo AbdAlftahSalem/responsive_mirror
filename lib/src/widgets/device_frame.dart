@@ -28,12 +28,37 @@ class MirrorDeviceFrame extends StatelessWidget {
 
   static const Color _bezel = Color(0xFF1E1E24);
 
+  static double _bezelFor(MirrorDevice device, double scale) {
+    final handheld = device.type == MirrorDeviceType.phone ||
+        device.type == MirrorDeviceType.tablet;
+    return (handheld ? 12.0 : 10.0) * scale.clamp(0.35, 1.0);
+  }
+
+  /// The size the framed device takes at [scale], bezel, keyboard base and
+  /// stand included.
+  static Size outerSize(MirrorDevice device, double scale) {
+    final bezel = _bezelFor(device, scale);
+    final w = device.size.width * scale + bezel * 2 + 2;
+    final h = device.size.height * scale + bezel * 2 + 2;
+    switch (device.type) {
+      case MirrorDeviceType.laptop:
+        return Size(w * 1.12, h + (14 * scale).clamp(5.0, 14.0));
+      case MirrorDeviceType.desktop:
+        return Size(w,
+            h + (60 * scale).clamp(10.0, 60.0) + (10 * scale).clamp(4.0, 10.0));
+      case MirrorDeviceType.phone:
+      case MirrorDeviceType.tablet:
+      case MirrorDeviceType.custom:
+        return Size(w, h);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final type = device.type;
     final isHandheld =
         type == MirrorDeviceType.phone || type == MirrorDeviceType.tablet;
-    final bezel = (isHandheld ? 12.0 : 10.0) * scale.clamp(0.35, 1.0);
+    final bezel = _bezelFor(device, scale);
     final screenRadius = device.cornerRadius * scale;
     final body = Container(
       padding: EdgeInsets.all(bezel),
