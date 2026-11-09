@@ -16,6 +16,7 @@ const _strings = <String, Map<String, String>>{
     'ar': 'شحن مجاني للطلبات فوق 50\$',
   },
   'free': {'en': 'FREE', 'ar': 'مجاناً'},
+  'categories': {'en': 'Categories', 'ar': 'الأقسام'},
   'description': {
     'en': 'Handmade in small batches. Every piece is a little different, '
         'which is what makes it yours.',

@@ -71,7 +71,7 @@ class HomePage extends StatelessWidget {
           label: Text(tr(context, 'add_product')),
         ),
         body: LayoutBuilder(builder: (context, constraints) {
-          final products = store.products;
+          final products = store.visibleProducts;
           if (constraints.maxWidth < 600) {
             return ListView.separated(
               key: const ValueKey('products'),
@@ -81,8 +81,10 @@ class HomePage extends StatelessWidget {
               itemBuilder: (context, i) => ProductTile(product: products[i]),
             );
           }
-          final columns = (constraints.maxWidth / 260).floor().clamp(2, 6);
-          return GridView.builder(
+          final wideDesktop = constraints.maxWidth >= 1200;
+          final gridWidth = constraints.maxWidth - (wideDesktop ? 240 : 0);
+          final columns = (gridWidth / 260).floor().clamp(2, 6);
+          final grid = GridView.builder(
             key: const ValueKey('products'),
             padding: const EdgeInsets.fromLTRB(24, 24, 24, 96),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -94,6 +96,32 @@ class HomePage extends StatelessWidget {
             itemCount: products.length,
             itemBuilder: (context, i) => ProductCard(product: products[i]),
           );
+          if (!wideDesktop) return grid;
+          // Desktop-only side panel: on phones and tablets it does not exist,
+          // so in isolated mode a tap here marks those devices "out of sync".
+          return Row(children: [
+            SizedBox(
+              width: 240,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text(tr(context, 'categories'),
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  for (final c in ShopStore.categories)
+                    ListTile(
+                      key: ValueKey('filter_$c'),
+                      selected: store.filter == c,
+                      leading: const Icon(Icons.label_outline),
+                      title: Text(c),
+                      onTap: () => store.filter = c,
+                    ),
+                ],
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(child: grid),
+          ]);
         }),
       ),
     );
