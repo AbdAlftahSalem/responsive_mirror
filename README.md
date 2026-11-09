@@ -22,4 +22,7 @@ ResponsiveMirror(
 )
 ```
 
+Overflows are traced back to the device (and language/theme) they happen on,
+with a red badge and a list. Export the whole grid, or every device, as PNG.
+
 > Work in progress. See CHANGELOG.md.

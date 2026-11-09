@@ -1,3 +1,19 @@
+## 0.3.0
+
+* Overflow and error report: every `FlutterError` (RenderFlex overflow,
+  exceptions in build/layout/paint) is traced back to the device and variant
+  it happened on, by walking from the failing render object / element up to
+  the device. The device gets a red outline and a badge with the count.
+* Issues panel (toolbar ⚠ button) listing device · variant, the message and
+  how many times it happened; `controller.issues`, `issuesFor(slotId)`,
+  `clearIssues()` for tests and CI.
+* PNG export: the whole grid, or every device at its real resolution
+  (device pixel ratio). Saved to `responsive_mirror_exports/` on desktop, the
+  temp directory on mobile, downloaded on the web, or handed to `onExport`.
+  Also `controller.exportPng(perDevice: true)`.
+* The original `FlutterError.onError` is still called and is restored when
+  the mirror is disposed.
+
 ## 0.2.0
 
 * Variants: render the same screen in several locales and themes side by side,
