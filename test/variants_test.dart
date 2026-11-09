@@ -132,4 +132,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Details A'), findsNWidgets(4));
   });
+
+  testWidgets('switching variants on keeps the page every device is on',
+      (tester) async {
+    useLargeWindow(tester);
+    final controller = ResponsiveMirrorController(
+      devices: const [MirrorDevices.iPhone15, MirrorDevices.laptop],
+      variants: const [MirrorVariant.english, MirrorVariant.arabic],
+      visibleVariantIds: const [],
+    );
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(ResponsiveMirror(
+      enabled: true,
+      controller: controller,
+      builder: (context, slot) => MaterialApp(
+        navigatorObservers: [ResponsiveMirror.navigatorObserverOf(context)],
+        home: Builder(
+          builder: (context) => TextButton(
+            key: const ValueKey('open'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                  builder: (_) => const DetailsPage(title: 'B')),
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('open')).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Details B'), findsNWidgets(2));
+
+    // Every slot is replaced by 4 new ones (2 devices x 2 variants).
+    controller.setVariantVisible(MirrorVariant.english, true);
+    controller.setVariantVisible(MirrorVariant.arabic, true);
+    await tester.pumpAndSettle();
+    expect(find.text('Details B'), findsNWidgets(4));
+  });
 }

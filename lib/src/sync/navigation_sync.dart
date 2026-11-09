@@ -104,8 +104,19 @@ class MirrorNavigationSync {
   MirrorNavigatorObserver observerFor(String slotId) => _observers.putIfAbsent(
       slotId, () => MirrorNavigatorObserver(slotId, this));
 
+  /// The page stack of the last device that left, used to bring new
+  /// devices to the same page when every device was replaced at once
+  /// (for example when variants are switched on).
+  List<Route<dynamic>>? _lastKnownPages;
+
   /// Forgets [slotId] (called when its device is removed from the grid).
-  void unregister(String slotId) => _observers.remove(slotId);
+  void unregister(String slotId) {
+    final observer = _observers.remove(slotId);
+    if (observer != null) {
+      _lastKnownPages =
+          observer.pages.length > 1 ? List.of(observer.pages) : null;
+    }
+  }
 
   Iterable<MirrorNavigatorObserver> _targets(MirrorNavigatorObserver source) =>
       _observers.values.where((o) =>
@@ -198,8 +209,13 @@ class MirrorNavigationSync {
     for (final o in _targets(joined)) {
       if (leader == null || o.pages.length > leader.pages.length) leader = o;
     }
-    if (leader == null || leader.pages.length <= joined.pages.length) return;
-    final missing = leader.pages.sublist(joined.pages.length);
+    var pages = leader?.pages;
+    final remembered = _lastKnownPages;
+    if ((pages == null || pages.length <= 1) && remembered != null) {
+      pages = remembered;
+    }
+    if (pages == null || pages.length <= joined.pages.length) return;
+    final missing = pages.sublist(joined.pages.length);
     _run(() {
       for (final route in missing) {
         final copy = cloneRoute(route);
