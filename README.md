@@ -189,6 +189,13 @@ breakpoints, locale/theme matrices and the overflow report.
   `RenderFlex` overflows from debug assertions.
 * In-process mode shares state above `MaterialApp`; if you need truly
   independent instances use isolated mode (web).
+* Apps that keep **one global navigator key** (GetX's `GetMaterialApp` uses
+  `Get.key`) cannot run several copies in one process: only one device
+  renders. Use isolated mode (web) for them; every frame is its own instance.
+* In isolated mode the frames share the page's origin, so they share
+  `localStorage` / IndexedDB (tokens, caches). Signing in on all devices at
+  the same moment can race; sign in once with input sync off (or reload after
+  signing in) and every instance starts signed in.
 * Isolated mode is **web only**. Separate instances of a Flutter desktop app
   need separate engines or windows, which a widget inside one app cannot embed
   today; the web has iframes. On other platforms it falls back to in-process
