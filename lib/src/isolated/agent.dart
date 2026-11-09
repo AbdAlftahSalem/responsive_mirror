@@ -117,13 +117,17 @@ class _ResponsiveMirrorAgentState extends State<ResponsiveMirrorAgent> {
     final start = _downPosition, startTime = _downTime;
     final target = _downTarget;
     _downPointer = null;
+    // A tap on nothing tappable (or on something with no key, label or text
+    // to find it by) is not replayed: sending it would mark every other
+    // device out of sync for a tap that changed nothing here.
     if (start == null || startTime == null) return;
+    if (target == null || !target.isIdentifiable) return;
     final moved = (event.position - start).distance;
     final held = event.timeStamp - startTime;
     if (moved > 18 || held > const Duration(milliseconds: 600)) return;
     _send({
       'type': 'tap',
-      'target': (target ?? const MirrorTarget()).toJson(),
+      'target': target.toJson(),
     });
   }
 
@@ -203,7 +207,9 @@ class _ResponsiveMirrorAgentState extends State<ResponsiveMirrorAgent> {
           if (element == null) {
             _send({'type': 'nomatch', 'what': 'tap $target'});
           } else {
-            MirrorTargetFinder.tap(element);
+            if (!MirrorTargetFinder.focusesTextField(element)) {
+              MirrorTargetFinder.tap(element);
+            }
             _send({'type': 'ok'});
           }
         case 'text':
@@ -262,8 +268,9 @@ class _ResponsiveMirrorAgentState extends State<ResponsiveMirrorAgent> {
     );
     // Inside a frame the window already has the device size; elsewhere
     // (tests, custom hosts) the slot's size is applied.
-    if (!slot.device.size.isEmpty)
+    if (!slot.device.size.isEmpty) {
       media = media.copyWith(size: slot.device.size);
+    }
     final variant = slot.variant;
     if (variant != null) media = variant.applyTo(media);
     return MediaQuery(data: media, child: app);

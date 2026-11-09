@@ -48,16 +48,36 @@ class _CounterAppState extends State<CounterApp> {
               child: ListView.builder(
                 key: const ValueKey('list'),
                 itemCount: 80,
-                itemBuilder: (context, i) => ListTile(
-                  title: Text('Row $i'),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => Scaffold(
-                        appBar: AppBar(title: Text('Opened $i')),
+                itemBuilder: (context, i) {
+                  void open() => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => Scaffold(
+                            appBar: AppBar(title: Text('Opened $i')),
+                          ),
+                        ),
+                      );
+                  // Different widgets per layout, same key: matched by key.
+                  if (!wide) {
+                    return ListTile(
+                      key: ValueKey('row_$i'),
+                      leading: const Icon(Icons.star),
+                      title: Text('Row $i'),
+                      subtitle: const Text('phone layout'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: open,
+                    );
+                  }
+                  return Card(
+                    key: ValueKey('row_$i'),
+                    child: InkWell(
+                      onTap: open,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text('Row $i  (desktop card)'),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
           ]),
@@ -121,6 +141,18 @@ void main() {
     await tester.tap(find.text('Row 3').first);
     await tester.pumpAndSettle();
     expect(find.text('Opened 3'), findsNWidgets(2));
+  });
+
+  testWidgets('the back button is replayed (matched by its tooltip)',
+      (tester) async {
+    final hub = await _pumpPair(tester);
+    await tester.tap(find.text('Row 2').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Opened 2'), findsNWidgets(2));
+    await tester.tap(find.byType(BackButton).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Opened 2'), findsNothing);
+    expect(hub.relay.outOfSync, isEmpty);
   });
 
   testWidgets('text input is mirrored into the matching field', (tester) async {
