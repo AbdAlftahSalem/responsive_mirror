@@ -11,6 +11,9 @@ import 'package:flutter/services.dart';
 import '../controller.dart';
 import '../device.dart';
 import '../export/save.dart';
+import '../isolated/agent.dart';
+import '../isolated/protocol.dart';
+import '../isolated/transport.dart';
 import '../issues.dart';
 import '../slot.dart';
 import '../variant.dart';
@@ -19,6 +22,22 @@ import '../sync/scroll_sync.dart';
 import 'device_frame.dart';
 import 'issues_panel.dart';
 import 'toolbar.dart';
+
+/// How the copies of your app are run.
+enum MirrorMode {
+  /// Every device renders its own widget tree inside ONE app (default).
+  /// App state above `MaterialApp` is shared, so taps are not replayed: the
+  /// shared state updates every device. Navigation and scrolling are synced.
+  /// Works on every platform.
+  inProcess,
+
+  /// Every device is a separate instance of the app with its own state
+  /// (web only: one iframe per device running your web build). Taps, text
+  /// input and scrolling are replayed on the other instances, matched by
+  /// key / semantics label / text. On other platforms the mirror falls back
+  /// to [inProcess].
+  isolated,
+}
 
 /// Builds one copy of your app for [slot].
 ///
@@ -61,6 +80,8 @@ class ResponsiveMirror extends StatefulWidget {
     this.showToolbar = true,
     this.backgroundColor = const Color(0xFF0E1016),
     this.onExport,
+    this.mode = MirrorMode.inProcess,
+    this.isolatedUrl,
   }) : assert(child != null || builder != null,
             'Provide either a child or a builder.');
 
@@ -113,6 +134,14 @@ class ResponsiveMirror extends StatefulWidget {
   /// temp directory on mobile.
   final Future<void> Function(List<MirrorExport> exports)? onExport;
 
+  /// In-process (default, every platform) or isolated (web only).
+  final MirrorMode mode;
+
+  /// Isolated mode: the URL each frame loads. Defaults to the current page
+  /// (`Uri.base`), i.e. the same web build; the frame detects it is a frame
+  /// from its `rm_*` query parameters and runs as an agent.
+  final Uri? isolatedUrl;
+
   /// The [MirrorSlot] of the device [context] is rendered in, or null when
   /// [context] is not inside a mirror.
   static MirrorSlot? slotOf(BuildContext context) =>
@@ -161,6 +190,50 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
   final GlobalKey<ScaffoldMessengerState> _messengerKey = GlobalKey();
   FlutterExceptionHandler? _previousOnError;
   FlutterExceptionHandler? _installedOnError;
+  MirrorFrameConfig? _frame;
+  MirrorChannel? _frameChannel;
+  final NavigatorObserver _frameObserver = NavigatorObserver();
+  MirrorHostTransport? _transport;
+  MirrorRelay? _relay;
+
+  bool get _isolatedHost => _relay != null;
+
+  void _setUpIsolated() {
+    if (widget.mode != MirrorMode.isolated || _relay != null) return;
+    if (!MirrorHostTransport.isSupported) {
+      debugPrint('responsive_mirror: isolated mode needs Flutter web '
+          '(one iframe per device). Falling back to in-process mode.');
+      return;
+    }
+    late final MirrorHostTransport transport;
+    final relay = MirrorRelay(
+      sendTo: (slot, message) => transport.send(slot, message),
+      isInputSyncEnabled: () => _controller.syncNavigation,
+      isScrollSyncEnabled: () => _controller.syncScroll,
+      onIssue: _onFrameIssue,
+    );
+    transport = MirrorHostTransport(onMessage: relay.receive);
+    _transport = transport;
+    _relay = relay;
+  }
+
+  void _onFrameIssue(String slotId, String message) {
+    final device = _deviceOf(slotId);
+    if (device == null) return;
+    MirrorVariant? variant;
+    for (final v in _controller.variants) {
+      if (slotId == MirrorSlot.idFor(device, v)) variant = v;
+    }
+    _controller.reportIssue(MirrorIssue(
+      slotId: slotId,
+      deviceName: device.name,
+      variantLabel: variant?.label,
+      kind: message.contains('overflowed')
+          ? MirrorIssueKind.overflow
+          : MirrorIssueKind.error,
+      message: message,
+    ));
+  }
 
   ResponsiveMirrorController get _controller =>
       widget.controller ?? _ownController!;
@@ -171,7 +244,15 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
     if (widget.controller == null) _ownController = _createController();
     _nav = MirrorNavigationSync(isEnabled: () => _controller.syncNavigation);
     _scroll = MirrorScrollSync(isEnabled: () => _controller.syncScroll);
-    if (widget.enabled) _installErrorHandler();
+    if (kIsWeb) {
+      _frame = MirrorFrameConfig.fromUri(Uri.base);
+      final frame = _frame;
+      if (frame != null) _frameChannel = frameChannel(frame.slotId);
+    }
+    if (_frame == null && widget.enabled) {
+      _setUpIsolated();
+      _installErrorHandler();
+    }
     _controller.attachExporter(_export);
   }
 
@@ -446,6 +527,8 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
   @override
   void dispose() {
     _removeErrorHandler();
+    _transport?.dispose();
+    _relay?.dispose();
     widget.controller?.attachExporter(null);
     _ownController?.dispose();
     _vertical.dispose();
@@ -461,9 +544,20 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
 
   @override
   Widget build(BuildContext context) {
+    final frame = _frame;
+    final channel = _frameChannel;
+    if (frame != null && channel != null) {
+      // This copy runs inside a mirror frame (isolated mode).
+      final slot = frame.toSlot(_frameObserver);
+      return ResponsiveMirrorAgent(
+        slot: slot,
+        channel: channel,
+        child: Builder(builder: (context) => _buildApp(context, slot)),
+      );
+    }
     if (!widget.enabled) return _buildApp(context, null);
     return ListenableBuilder(
-      listenable: _controller,
+      listenable: Listenable.merge([_controller, _relay]),
       builder: (context, _) {
         if (!_controller.mirrorVisible) return _buildSingle(context);
         return MaterialApp(
@@ -692,6 +786,15 @@ class _ResponsiveMirrorState extends State<ResponsiveMirror> {
       device: device,
       scale: scale,
       issues: _controller.issuesFor(id),
+      outOfSync: _relay?.outOfSync[id],
+      onOutOfSyncTap: () => _relay?.resetSync(),
+      frame: _isolatedHost
+          ? _transport!.frameView(
+              id,
+              MirrorFrameConfig(slotId: id, device: device, variant: variant)
+                  .applyTo(widget.isolatedUrl ?? Uri.base),
+            )
+          : null,
       onIssuesTap: () => _controller.showIssues = true,
       boundaryKey: _boundaryKeys.putIfAbsent(
           id, () => GlobalKey(debugLabel: 'responsive_mirror $id')),
@@ -758,6 +861,9 @@ class _DeviceTile extends StatelessWidget {
     required this.boundaryKey,
     this.issues = const [],
     this.onIssuesTap,
+    this.outOfSync,
+    this.onOutOfSyncTap,
+    this.frame,
   });
 
   final MirrorDevice device;
@@ -769,6 +875,9 @@ class _DeviceTile extends StatelessWidget {
   final GlobalKey boundaryKey;
   final List<MirrorIssue> issues;
   final VoidCallback? onIssuesTap;
+  final String? outOfSync;
+  final VoidCallback? onOutOfSyncTap;
+  final Widget? frame;
 
   @override
   Widget build(BuildContext context) {
@@ -787,6 +896,7 @@ class _DeviceTile extends StatelessWidget {
             scroll: scroll,
             appBuilder: appBuilder,
             boundaryKey: boundaryKey,
+            frame: frame,
           ),
         ),
       ),
@@ -812,6 +922,33 @@ class _DeviceTile extends StatelessWidget {
               ]),
               style: const TextStyle(fontSize: 13),
             ),
+            if (outOfSync != null) ...[
+              const SizedBox(width: 8),
+              Tooltip(
+                message: '$outOfSync (tap to dismiss)',
+                child: GestureDetector(
+                  onTap: onOutOfSyncTap,
+                  child: Container(
+                    key: ValueKey('rm_out_of_sync_${slot.id}'),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5A524),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.sync_problem, size: 14, color: Colors.black),
+                      SizedBox(width: 4),
+                      Text('out of sync',
+                          style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                ),
+              ),
+            ],
             if (count > 0) ...[
               const SizedBox(width: 8),
               GestureDetector(
@@ -925,7 +1062,12 @@ class MirrorDeviceHost extends StatefulWidget {
     required this.scroll,
     required this.appBuilder,
     this.boundaryKey,
+    this.frame,
   });
+
+  /// Isolated mode: the frame (iframe view) shown instead of an in-process
+  /// copy of the app.
+  final Widget? frame;
 
   /// Key of the [RepaintBoundary] around the app (used for PNG export).
   final GlobalKey? boundaryKey;
@@ -972,6 +1114,10 @@ class _MirrorDeviceHostState extends State<MirrorDeviceHost> {
   @override
   Widget build(BuildContext context) {
     final slot = widget.slot;
+    final frame = widget.frame;
+    if (frame != null) {
+      return RepaintBoundary(key: widget.boundaryKey, child: frame);
+    }
     var media = slot.device.applyTo(MediaQuery.of(context));
     final variant = slot.variant;
     if (variant != null) media = variant.applyTo(media);

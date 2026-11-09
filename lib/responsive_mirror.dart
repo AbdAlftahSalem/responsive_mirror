@@ -4,6 +4,9 @@ library;
 
 export 'src/controller.dart';
 export 'src/device.dart';
+export 'src/isolated/agent.dart';
+export 'src/isolated/protocol.dart';
+export 'src/isolated/target.dart';
 export 'src/issues.dart';
 export 'src/slot.dart';
 export 'src/sync/navigation_sync.dart'
