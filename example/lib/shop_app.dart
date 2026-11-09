@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:responsive_mirror/responsive_mirror.dart';
 
+import 'l10n.dart';
 import 'store.dart';
 
 class ShopApp extends StatelessWidget {
@@ -8,18 +10,26 @@ class ShopApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Mirror Shop',
-      debugShowCheckedModeBanner: false,
-      // Lets the mirror replay push/pop on every device.
-      navigatorObservers: [ResponsiveMirror.navigatorObserverOf(context)],
-      theme: ThemeData(colorSchemeSeed: const Color(0xFF3F51B5)),
-      darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFF3F51B5),
-        brightness: Brightness.dark,
+    return ValueListenableBuilder<Locale>(
+      valueListenable: appLocale,
+      builder: (context, locale, _) => MaterialApp(
+        title: 'Mirror Shop',
+        debugShowCheckedModeBanner: false,
+        // Lets the mirror replay push/pop on every device.
+        navigatorObservers: [ResponsiveMirror.navigatorObserverOf(context)],
+        // A mirror variant (e.g. Arabic · Dark) wins over the app's own choice.
+        locale: ResponsiveMirror.localeOf(context) ?? locale,
+        themeMode: ResponsiveMirror.themeModeOf(context) ?? ThemeMode.light,
+        supportedLocales: const [Locale('en'), Locale('ar')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        theme: ThemeData(colorSchemeSeed: const Color(0xFF3F51B5)),
+        darkTheme: ThemeData(
+          colorSchemeSeed: const Color(0xFF3F51B5),
+          brightness: Brightness.dark,
+        ),
+        routes: {'/add': (_) => const AddProductPage()},
+        home: const HomePage(),
       ),
-      routes: {'/add': (_) => const AddProductPage()},
-      home: const HomePage(),
     );
   }
 }
@@ -33,8 +43,17 @@ class HomePage extends StatelessWidget {
       listenable: store,
       builder: (context, _) => Scaffold(
         appBar: AppBar(
-          title: const Text('Mirror Shop'),
+          title: Text(tr(context, 'title')),
           actions: [
+            TextButton.icon(
+              key: const ValueKey('lang_toggle'),
+              onPressed: () => appLocale.value =
+                  appLocale.value.languageCode == 'ar'
+                      ? const Locale('en')
+                      : const Locale('ar'),
+              icon: const Icon(Icons.translate),
+              label: Text(tr(context, 'language')),
+            ),
             Padding(
               padding: const EdgeInsetsDirectional.only(end: 12),
               child: Badge(
@@ -49,7 +68,7 @@ class HomePage extends StatelessWidget {
           key: const ValueKey('add_product'),
           onPressed: () => Navigator.of(context).pushNamed('/add'),
           icon: const Icon(Icons.add),
-          label: const Text('Add product'),
+          label: Text(tr(context, 'add_product')),
         ),
         body: LayoutBuilder(builder: (context, constraints) {
           final products = store.products;
@@ -100,7 +119,7 @@ class ProductTile extends StatelessWidget {
         backgroundColor: Color(product.colorValue),
         child: const Icon(Icons.local_mall, color: Colors.white),
       ),
-      title: Text(product.name),
+      title: Text(product.localizedName(isArabic(context))),
       subtitle: Text('\$${product.price.toStringAsFixed(2)}'),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => openProduct(context, product),
@@ -134,7 +153,7 @@ class ProductCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(product.name,
+                  Text(product.localizedName(isArabic(context)),
                       style: Theme.of(context).textTheme.titleMedium),
                   Text('\$${product.price.toStringAsFixed(2)}'),
                 ],
@@ -165,26 +184,24 @@ class ProductPage extends StatelessWidget {
     final info = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(product.name, style: Theme.of(context).textTheme.headlineMedium),
+        Text(product.localizedName(isArabic(context)),
+            style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 8),
         Text('\$${product.price.toStringAsFixed(2)}',
             style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 16),
-        const Text(
-          'Handmade in small batches. Every piece is a little different, '
-          'which is what makes it yours.',
-        ),
+        Text(tr(context, 'description')),
         const SizedBox(height: 24),
         FilledButton.icon(
           key: const ValueKey('add_to_cart'),
           onPressed: () => store.addToCart(product),
           icon: const Icon(Icons.add_shopping_cart),
-          label: const Text('Add to cart'),
+          label: Text(tr(context, 'add_to_cart')),
         ),
       ],
     );
     return Scaffold(
-      appBar: AppBar(title: Text(product.name)),
+      appBar: AppBar(title: Text(product.localizedName(isArabic(context)))),
       body: ListView(
         key: const ValueKey('product_scroll'),
         padding: const EdgeInsets.all(24),
@@ -237,7 +254,7 @@ class _AddProductPageState extends State<AddProductPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add product')),
+      appBar: AppBar(title: Text(tr(context, 'add_product'))),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
@@ -249,25 +266,26 @@ class _AddProductPageState extends State<AddProductPage> {
                 TextFormField(
                   key: const ValueKey('name_field'),
                   controller: _name,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  decoration: InputDecoration(labelText: tr(context, 'name')),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? tr(context, 'required')
+                      : null,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   key: const ValueKey('price_field'),
                   controller: _price,
-                  decoration: const InputDecoration(labelText: 'Price'),
+                  decoration: InputDecoration(labelText: tr(context, 'price')),
                   keyboardType: TextInputType.number,
                   validator: (v) => double.tryParse(v ?? '') == null
-                      ? 'Enter a number'
+                      ? tr(context, 'number')
                       : null,
                 ),
                 const SizedBox(height: 24),
                 FilledButton(
                   key: const ValueKey('save_product'),
                   onPressed: _save,
-                  child: const Text('Save'),
+                  child: Text(tr(context, 'save')),
                 ),
               ],
             ),
