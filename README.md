@@ -1,5 +1,7 @@
 # responsive_mirror
 
+[Package on pub.dev](https://pub.dev/packages/responsive_mirror)
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Flutter](https://img.shields.io/badge/Flutter-%E2%89%A53.27-02569B?logo=flutter)
 ![Platforms](https://img.shields.io/badge/platforms-web%20%7C%20windows%20%7C%20linux%20%7C%20macos-informational)
@@ -18,7 +20,7 @@ It is a plain widget, so it runs wherever Flutter runs: **Windows, Linux,
 macOS and the web** (Chrome). In release builds it steps aside and returns your
 app unchanged (`enabled` defaults to `kDebugMode`).
 
-![Four devices side by side](doc/screenshots/grid.jpg)
+![Four devices side by side](https://raw.githubusercontent.com/AbdAlftahSalem/responsive_mirror/main/doc/screenshots/grid.jpg)
 
 ## Features
 
@@ -34,11 +36,34 @@ app unchanged (`enabled` defaults to `kDebugMode`).
 
 ## Quick start
 
+Install version 0.4.1 from pub.dev:
+
+```bash
+flutter pub add --dev responsive_mirror:^0.4.1
+```
+
 ```yaml
 dev_dependencies:
-  responsive_mirror:
-    git: https://github.com/AbdAlftahSalem/responsive_mirror
+  responsive_mirror: ^0.4.1
 ```
+
+This is a development preview tool, so the installation above uses
+`dev_dependencies`. If your production `lib/` imports the mirror, Dart's
+`depend_on_referenced_packages` lint expects it under `dependencies` instead.
+To keep it dev-only, use a separate development entry point under `tool/`:
+
+```dart
+// tool/mirror.dart
+import 'package:flutter/widgets.dart';
+import 'package:responsive_mirror/responsive_mirror.dart';
+import '../lib/main.dart' show MyApp;
+
+void main() => runApp(const ResponsiveMirror(child: MyApp()));
+```
+
+Run it with `flutter run -d chrome -t tool/mirror.dart`. Your normal production
+entry point stays unchanged. The following examples show the mirror wiring;
+place that wiring in your development entry point when keeping a dev dependency.
 
 Wrap your app and add one line to your `MaterialApp`:
 
@@ -67,7 +92,7 @@ Run it on Windows / Linux / macOS (`flutter run -d windows`) or in Chrome
 
 ### Languages and themes side by side
 
-![English light next to Arabic dark](doc/screenshots/variants.jpg)
+![English light next to Arabic dark](https://raw.githubusercontent.com/AbdAlftahSalem/responsive_mirror/main/doc/screenshots/variants.jpg)
 
 ```dart
 ResponsiveMirror(
@@ -94,7 +119,7 @@ Theme variants also set `MediaQuery.platformBrightness`, so apps that use
 
 ### Overflow report and PNG export
 
-![Overflow badge and issues panel](doc/screenshots/overflow.jpg)
+![Overflow badge and issues panel](https://raw.githubusercontent.com/AbdAlftahSalem/responsive_mirror/main/doc/screenshots/overflow.jpg)
 
 Nothing to configure: open the screen, and any device where a `RenderFlex`
 overflows (or anything throws) turns red. In tests or CI:
@@ -109,7 +134,7 @@ final pngs = await controller.exportPng(perDevice: true);
 
 ### Isolated mode (web)
 
-![Isolated mode with an out-of-sync device](doc/screenshots/isolated.jpg)
+![Isolated mode with an out-of-sync device](https://raw.githubusercontent.com/AbdAlftahSalem/responsive_mirror/main/doc/screenshots/isolated.jpg)
 
 ```dart
 ResponsiveMirror(mode: MirrorMode.isolated, child: const MyApp())
