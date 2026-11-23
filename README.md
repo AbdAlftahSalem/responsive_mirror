@@ -20,7 +20,7 @@ It is a plain widget, so it runs wherever Flutter runs: **Windows, Linux,
 macOS and the web** (Chrome). In release builds it steps aside and returns your
 app unchanged (`enabled` defaults to `kDebugMode`).
 
-![Four devices side by side](doc/screenshots/grid.jpg)
+![Four devices side by side](https://raw.githubusercontent.com/AbdAlftahSalem/responsive_mirror/main/doc/screenshots/grid.jpg)
 
 ## Features
 
@@ -92,7 +92,7 @@ Run it on Windows / Linux / macOS (`flutter run -d windows`) or in Chrome
 
 ### Languages and themes side by side
 
-![English light next to Arabic dark](doc/screenshots/variants.jpg)
+![English light next to Arabic dark](https://raw.githubusercontent.com/AbdAlftahSalem/responsive_mirror/main/doc/screenshots/variants.jpg)
 
 ```dart
 ResponsiveMirror(
@@ -119,7 +119,7 @@ Theme variants also set `MediaQuery.platformBrightness`, so apps that use
 
 ### Overflow report and PNG export
 
-![Overflow badge and issues panel](doc/screenshots/overflow.jpg)
+![Overflow badge and issues panel](https://raw.githubusercontent.com/AbdAlftahSalem/responsive_mirror/main/doc/screenshots/overflow.jpg)
 
 Nothing to configure: open the screen, and any device where a `RenderFlex`
 overflows (or anything throws) turns red. In tests or CI:
@@ -134,7 +134,7 @@ final pngs = await controller.exportPng(perDevice: true);
 
 ### Isolated mode (web)
 
-![Isolated mode with an out-of-sync device](doc/screenshots/isolated.jpg)
+![Isolated mode with an out-of-sync device](https://raw.githubusercontent.com/AbdAlftahSalem/responsive_mirror/main/doc/screenshots/isolated.jpg)
 
 ```dart
 ResponsiveMirror(mode: MirrorMode.isolated, child: const MyApp())
